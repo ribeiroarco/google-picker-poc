@@ -1,85 +1,72 @@
-import React, { useEffect } from 'react';
-import { gapi } from 'gapi-script';
+import { useEffect, useRef } from 'react'
 
 const App = () => {
-  const CLIENT_ID = 'SUA_CLIENT_ID.apps.googleusercontent.com';
-  const DEVELOPER_KEY = 'SUA_API_KEY';
-  const SCOPES = 'https://www.googleapis.com/auth/drive.readonly';
-
-  let oauthToken = null;
+  const apiKey = import.meta.env.VITE_API_KEY
+  const clientId = import.meta.env.VITE_GOOGLE_CLIENT_ID
+  const tokenClientRef = useRef(null)
+  const accessTokenRef = useRef(null)
 
   useEffect(() => {
-    const initGapi = () => {
-      gapi.load('client:auth2', () => {
-        gapi.auth2.init({
-          client_id: CLIENT_ID,
-          scope: SCOPES,
-        });
-      });
-    };
-    initGapi();
-  }, []);
+    // Carrega a Picker API
+    const loadPicker = () => {
+      gapi.load('picker', () => {
+        console.log('Picker API carregada')
+      })
+    }
 
-  const handleAuth = async () => {
-    const authInstance = gapi.auth2.getAuthInstance();
-    const user = await authInstance.signIn();
-    oauthToken = user.getAuthResponse().access_token;
-    createPicker();
-  };
+    // Inicializa o cliente de token
+    const initTokenClient = () => {
+      tokenClientRef.current = google.accounts.oauth2.initTokenClient({
+        client_id: clientId,
+        scope: 'https://www.googleapis.com/auth/drive.readonly',
+        callback: (response) => {
+          if (response.access_token) {
+            accessTokenRef.current = response.access_token
+            createPicker()
+          } else {
+            console.error('Erro ao obter token:', response)
+          }
+        },
+      })
+    }
+
+    gapi.load('client', () => {
+      gapi.client.setApiKey(apiKey)
+      initTokenClient()
+      loadPicker()
+    })
+  }, [])
+
+  const openPicker = () => {
+    if (tokenClientRef.current) {
+      tokenClientRef.current.requestAccessToken()
+    }
+  }
 
   const createPicker = () => {
-    if (!window.google || !window.google.picker) {
-      // Carrega a API Picker se ainda não estiver disponível
-      window.gapi.load('picker', { callback: createPicker });
-      return;
-    }
+    if (!accessTokenRef.current) return
 
-    const view = new window.google.picker.View(window.google.picker.ViewId.DOCS);
-    const picker = new window.google.picker.PickerBuilder()
-      .addView(view)
-      .setOAuthToken(oauthToken)
-      .setDeveloperKey(DEVELOPER_KEY)
+    const picker = new google.picker.PickerBuilder()
+      .addView(google.picker.ViewId.DOCS)
+      .setOAuthToken(accessTokenRef.current)
+      .setDeveloperKey(apiKey)
       .setCallback(pickerCallback)
-      .build();
-    picker.setVisible(true);
-  };
+      .build()
+    picker.setVisible(true)
+  }
 
-  const pickerCallback = async (data) => {
-    if (data.action === window.google.picker.Action.PICKED) {
-      const file = data.docs[0]; // contém id, name, url etc.
-      console.log('Arquivo selecionado:', file);
-
-      const fileContent = await fetchFileFromDrive(file.id);
-      await uploadToBackend(file.name, fileContent);
+  const pickerCallback = (data) => {
+    if (data.action === google.picker.Action.PICKED) {
+      const file = data.docs[0]
+      alert(`Arquivo selecionado: ${file.name}\nID: ${file.id}`)
     }
-  };
+  }
 
-  const fetchFileFromDrive = async (fileId) => {
-    const res = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`, {
-      headers: {
-        Authorization: `Bearer ${oauthToken}`,
-      },
-    });
-    return await res.blob();
-  };
+  return (
+    <div>
+      <button onClick={openPicker}>Abrir Google Drive Picker</button>
+    </div>
+  )
+}
 
-  const uploadToBackend = async (filename, blob) => {
-    const formData = new FormData();
-    formData.append('file', blob, filename);
-
-    const res = await fetch('https://seu-backend.com/api/upload', {
-      method: 'POST',
-      body: formData,
-    });
-
-    if (res.ok) {
-      console.log('Upload feito com sucesso');
-    } else {
-      console.error('Erro no upload');
-    }
-  };
-
-  return <button onClick={handleAuth}>Selecionar Arquivo do Google Drive</button>;
-};
-
-export default App;
+export default App
