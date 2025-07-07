@@ -1,5 +1,21 @@
 import { useEffect, useRef } from 'react'
 
+// Função utilitária para aguardar o carregamento dos scripts
+function waitForGlobal(name) {
+  return new Promise((resolve) => {
+    if (window[name]) {
+      resolve(window[name])
+    } else {
+      const interval = setInterval(() => {
+        if (window[name]) {
+          clearInterval(interval)
+          resolve(window[name])
+        }
+      }, 50)
+    }
+  })
+}
+
 const App = () => {
   const apiKey = import.meta.env.VITE_API_KEY
   const clientId = import.meta.env.VITE_GOOGLE_CLIENT_ID
@@ -7,33 +23,39 @@ const App = () => {
   const accessTokenRef = useRef(null)
 
   useEffect(() => {
-    // Carrega a Picker API
-    const loadPicker = () => {
-      gapi.load('picker', () => {
-        console.log('Picker API carregada')
-      })
-    }
+    // Aguarda os scripts 'gapi' e 'google' serem carregados
+    Promise.all([
+      waitForGlobal('gapi'),
+      waitForGlobal('google'),
+    ]).then(() => {
+      // Carrega a Picker API
+      const loadPicker = () => {
+        window.gapi.load('picker', () => {
+          console.log('Picker API carregada')
+        })
+      }
 
-    // Inicializa o cliente de token
-    const initTokenClient = () => {
-      tokenClientRef.current = google.accounts.oauth2.initTokenClient({
-        client_id: clientId,
-        scope: 'https://www.googleapis.com/auth/drive.readonly',
-        callback: (response) => {
-          if (response.access_token) {
-            accessTokenRef.current = response.access_token
-            createPicker()
-          } else {
-            console.error('Erro ao obter token:', response)
-          }
-        },
-      })
-    }
+      // Inicializa o cliente de token
+      const initTokenClient = () => {
+        tokenClientRef.current = window.google.accounts.oauth2.initTokenClient({
+          client_id: clientId,
+          scope: 'https://www.googleapis.com/auth/drive.readonly',
+          callback: (response) => {
+            if (response.access_token) {
+              accessTokenRef.current = response.access_token
+              createPicker()
+            } else {
+              console.error('Erro ao obter token:', response)
+            }
+          },
+        })
+      }
 
-    gapi.load('client', () => {
-      gapi.client.setApiKey(apiKey)
-      initTokenClient()
-      loadPicker()
+      window.gapi.load('client', () => {
+        window.gapi.client.setApiKey(apiKey)
+        initTokenClient()
+        loadPicker()
+      })
     })
   }, [])
 
@@ -46,8 +68,8 @@ const App = () => {
   const createPicker = () => {
     if (!accessTokenRef.current) return
 
-    const picker = new google.picker.PickerBuilder()
-      .addView(google.picker.ViewId.DOCS)
+    const picker = new window.google.picker.PickerBuilder()
+      .addView(window.google.picker.ViewId.DOCS)
       .setOAuthToken(accessTokenRef.current)
       .setDeveloperKey(apiKey)
       .setCallback(pickerCallback)
@@ -56,7 +78,7 @@ const App = () => {
   }
 
   const pickerCallback = (data) => {
-    if (data.action === google.picker.Action.PICKED) {
+    if (data.action === window.google.picker.Action.PICKED) {
       const file = data.docs[0]
       alert(`Arquivo selecionado: ${file.name}\nID: ${file.id}`)
     }
